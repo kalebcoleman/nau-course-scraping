@@ -10,8 +10,3 @@ __pycache__/
 # macOS
 .DS_Store
 
-# Output files
-# These are ignored by default to keep the repository clean and focused on source code.
-# If you want to track the output data in your repository, comment out the lines below.
-nau_courses.csv
-nau_empty_prefixes.csv
