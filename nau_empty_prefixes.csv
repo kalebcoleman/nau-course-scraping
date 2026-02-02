@@ -1,4 +1,3 @@
-term,term_code,prefix,error
 Fall 2025,1257,ADM,empty
 Fall 2025,1257,BASW,empty
 Fall 2025,1257,CINE,empty
@@ -13,6 +12,13 @@ Fall 2025,1257,SST,empty
 Fall 2025,1257,TRAN,empty
 Spring 2026,1261,ADM,empty
 Spring 2026,1261,BASW,empty
-Spring 2026,1261,ADM,empty
-Spring 2026,1261,BASW,empty
 Spring 2026,1261,CINE,empty
+Spring 2026,1261,EET,empty
+Spring 2026,1261,EIT,empty
+Spring 2026,1261,EMF,empty
+Spring 2026,1261,ENVY,empty
+Spring 2026,1261,IBH,empty
+Spring 2026,1261,SBA,empty
+Spring 2026,1261,SOCIO,empty
+Spring 2026,1261,SST,empty
+Spring 2026,1261,TRAN,empty
