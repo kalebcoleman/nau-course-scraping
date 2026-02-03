@@ -23,8 +23,6 @@ import re
 import sys
 from pathlib import Path
 
-from ethics_analysis import EthicsMatcher
-
 try:
     import pandas as pd
 except ImportError:  # pragma: no cover - runtime dependency check
@@ -41,6 +39,9 @@ except ImportError:  # pragma: no cover - runtime dependency check
         file=sys.stderr,
     )
     raise SystemExit(1)
+
+# Local import after dependency checks so missing third-party libs fail with a clear message.
+from ethics_analysis import EthicsMatcher
 
 # Primary patterns: explicit AI terms (high precision).
 PRIMARY_PATTERNS = [
@@ -112,6 +113,8 @@ NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 def normalize_text(text: str) -> str:
     """Lowercase and normalize whitespace/punctuation for reliable matching."""
     lowered = text.lower()
+    # Common catalog punctuation variant: "A.I." -> "ai" so word-boundary matches still work.
+    lowered = re.sub(r"\ba\.\s*i\.?\b", "ai", lowered)
     cleaned = NON_ALNUM_RE.sub(" ", lowered)
     return " ".join(cleaned.split())
 
@@ -173,7 +176,7 @@ def main() -> None:
         "--fuzzy-threshold",
         type=int,
         default=95,
-        help="Fuzzy match threshold (default: 92).",
+        help="Fuzzy match threshold (0-100, default: 95).",
     )
     parser.add_argument(
         "--disable-fuzzy",
@@ -244,9 +247,12 @@ def main() -> None:
     df["is_ai_related"] = keyword_match | fuzzy_match
     df["is_ethics_related"] = ethics_match
 
-    # Deduplicate by prefix + number and preserve a single AI flag per course.
-    ai_flags = (
-        df.groupby([args.prefix_col, args.number_col], dropna=False)["is_ai_related"]
+    # Deduplicate by prefix + number and preserve a single AI + ethics flag per course.
+    # A course may appear in multiple terms; for curriculum coverage we treat it as one unique course.
+    unique_flags = (
+        df.groupby([args.prefix_col, args.number_col], dropna=False)[
+            ["is_ai_related", "is_ethics_related"]
+        ]
         .any()
         .reset_index()
     )
@@ -254,9 +260,12 @@ def main() -> None:
         df.sort_values([args.prefix_col, args.number_col])
         .drop_duplicates(subset=[args.prefix_col, args.number_col])
         .drop(columns=["is_ai_related", "is_ethics_related"])
-        .merge(ai_flags, on=[args.prefix_col, args.number_col], how="left")
+        .merge(unique_flags, on=[args.prefix_col, args.number_col], how="left")
     )
     unique_courses["is_ai_related"] = unique_courses["is_ai_related"].fillna(False)
+    unique_courses["is_ethics_related"] = unique_courses["is_ethics_related"].fillna(
+        False
+    )
 
     # Total unique courses per prefix.
     prefix_totals = (
@@ -273,11 +282,13 @@ def main() -> None:
         [args.prefix_col, args.number_col]
     )
     full_output = output_dir / "nau_courses_with_flag.csv"
+    unique_output = output_dir / "nau_unique_courses_with_flag.csv"
     ai_output = output_dir / "nau_courses_ai_subset.csv"
     prefix_totals_output = output_dir / "nau_prefix_totals.csv"
     summary_output = output_dir / "nau_summary.csv"
 
     df.to_csv(full_output, index=False)
+    unique_courses.to_csv(unique_output, index=False)
     ai_subset.to_csv(ai_output, index=False)
     prefix_totals.to_csv(prefix_totals_output, index=False)
     pd.DataFrame(
@@ -286,6 +297,7 @@ def main() -> None:
 
     print("Analysis complete.")
     print(f"Full course list with AI flag: {full_output}")
+    print(f"Unique course list with flags: {unique_output}")
     print(f"AI-only subset: {ai_output}")
     print(f"Prefix totals: {prefix_totals_output}")
     print(f"Summary: {summary_output}")

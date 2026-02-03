@@ -26,7 +26,7 @@ import re
 import time
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -61,6 +61,8 @@ PREFIXES_PATH = "data/prefixes.json"
 
 # Time to wait between requests to be polite to the server.
 SLEEP_TIME = 0.25
+
+VALID_PREFIX_RE = re.compile(r"^[A-Z&]{2,6}$")
 
 # =========================
 # DATA MODEL
@@ -150,6 +152,37 @@ def load_existing_urls() -> set[str]:
     return existing
 
 
+def load_existing_empty_prefix_keys() -> set[tuple[str, str, str]]:
+    """
+    Load (term_code, prefix) keys already present in the empty-prefix log.
+
+    This prevents duplicate rows when the scraper is resumed and re-visits prefixes
+    that were previously confirmed empty (or previously timed out).
+    """
+    keys: set[tuple[str, str, str]] = set()
+    if not os.path.exists(EMPTY_PREFIXES_CSV):
+        return keys
+
+    with open(EMPTY_PREFIXES_CSV, newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if not row:
+                continue
+            # Handle both headered and legacy headerless files.
+            if row[0].strip().lower() == "term":
+                continue
+            if len(row) < 3:
+                continue
+            term_code = row[1].strip()
+            prefix = row[2].strip().upper()
+            error = row[3].strip() if len(row) >= 4 else ""
+            if not term_code or not prefix:
+                continue
+            keys.add((term_code, prefix, error))
+
+    return keys
+
+
 def load_prefixes(path: str) -> List[str]:
     """
     Loads course prefixes from a JSON file.
@@ -172,7 +205,29 @@ def load_prefixes(path: str) -> List[str]:
     if not isinstance(data, list) or not all(isinstance(p, str) for p in data):
         raise ValueError(f"Invalid prefixes format in {path}; expected JSON list.")
 
-    return data
+    cleaned: list[str] = []
+    invalid: list[str] = []
+    for raw in data:
+        prefix = raw.strip().upper()
+        if VALID_PREFIX_RE.fullmatch(prefix):
+            cleaned.append(prefix)
+        else:
+            invalid.append(raw)
+
+    if invalid:
+        raise ValueError(
+            f"Invalid prefixes in {path}: {invalid}. Expected 2-6 uppercase letters (optionally '&')."
+        )
+
+    # Preserve deterministic ordering while removing duplicates.
+    seen: set[str] = set()
+    unique: list[str] = []
+    for p in cleaned:
+        if p in seen:
+            continue
+        unique.append(p)
+        seen.add(p)
+    return unique
 
 
 def write_csv(rows: Dict[str, Dict]):
@@ -227,7 +282,10 @@ def log_empty_prefix(term_label: str, term_code: int, prefix: str, error: str):
     """
     # Create the file and write the header if it doesn't exist.
     ensure_output_dirs()
-    write_header = not os.path.exists(EMPTY_PREFIXES_CSV)
+    write_header = (
+        not os.path.exists(EMPTY_PREFIXES_CSV)
+        or os.path.getsize(EMPTY_PREFIXES_CSV) == 0
+    )
     with open(EMPTY_PREFIXES_CSV, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f, fieldnames=["term", "term_code", "prefix", "error"]
@@ -250,8 +308,12 @@ def log_empty_prefix(term_label: str, term_code: int, prefix: str, error: str):
 
 
 def get_course_links(
-    driver: WebDriver, prefix: str, term_code: int, retries: int = 2, wait_s: int = 15
-) -> List[str]:
+    driver: WebDriver,
+    prefix: str,
+    term_code: int,
+    retries: int = 2,
+    wait_s: int = 15,
+) -> tuple[list[str], Literal["ok", "empty", "timeout", "error"]]:
     """
     Fetches the list of individual course page URLs for a given prefix and term.
 
@@ -263,13 +325,17 @@ def get_course_links(
         wait_s (int): The number of seconds for explicit waits.
 
     Returns:
-        List[str]: A sorted list of unique course page URLs.
+        tuple[list[str], str]: (links, status) where status is one of:
+            - "ok": successfully loaded the results page (links may be non-empty)
+            - "empty": results page confirmed "No courses found"
+            - "timeout": results page did not load after retries
+            - "error": unexpected Selenium/WebDriver error
     """
     for attempt in range(retries + 1):
-        driver.get(results_url(prefix, term_code))
-        wait = WebDriverWait(driver, wait_s)
-
         try:
+            driver.get(results_url(prefix, term_code))
+            wait = WebDriverWait(driver, wait_s)
+
             # Wait for either the course list or the "no courses found" message.
             wait.until(
                 EC.any_of(
@@ -286,11 +352,15 @@ def get_course_links(
                 print(f"[WARN] Timeout on {prefix} list page, retrying...")
                 continue
             print(f"[WARN] {prefix} list timed out after {retries} retries; skipping.")
-            return []
+            return [], "timeout"
+        except WebDriverException as e:
+            print(f"[WARN] Failed to load list page for {prefix}: {type(e).__name__}: {e}")
+            return [], "error"
 
         # If the "no courses found" message is present, return an empty list.
         if driver.find_elements(By.XPATH, "//div[@id='main']//h1[normalize-space()='No courses found']"):
-            return []
+            polite_sleep()
+            return [], "empty"
 
         # Collect all unique course links from the page.
         links = set()
@@ -302,9 +372,10 @@ def get_course_links(
                     href = f"{BASE}/{href}"
                 links.add(href)
 
-        return sorted(list(links))
+        polite_sleep()
+        return sorted(list(links)), "ok"
 
-    return []
+    return [], "error"
 
 
 def text_after_label(driver: WebDriver, label: str) -> Optional[str]:
@@ -469,35 +540,49 @@ def main():
     driver = make_driver(headless=not args.no_headless)
 
     fieldnames = [field.name for field in fields(Course)]
-    existing_rows: Dict[str, Dict] = {}
     existing_urls: set[str] = set()
-    append_writer = None
-    append_file = None
+    seen_urls: set[str] = set()
+    logged_empty: set[tuple[str, str, str]] = set()
+    writer: csv.DictWriter | None = None
+    out_file = None
 
     if args.overwrite:
-        print("Overwrite enabled: will write CSV once at the end.")
+        print("Overwrite enabled: will stream-write a fresh CSV.")
+        # Start fresh for both output files.
+        Path(CSV_PATH).unlink(missing_ok=True)
+        Path(EMPTY_PREFIXES_CSV).unlink(missing_ok=True)
+
+        out_file = open(CSV_PATH, "w", newline="", encoding="utf-8")
+        writer = csv.DictWriter(out_file, fieldnames=fieldnames)
+        writer.writeheader()
     else:
         existing_urls = load_existing_urls()
-        append_writer, append_file = open_append_writer(fieldnames)
+        seen_urls = set(existing_urls)
+        logged_empty = load_existing_empty_prefix_keys()
+        writer, out_file = open_append_writer(fieldnames)
 
     try:
         total_prefixes = len(prefixes) * len(TERM_CODES)
         step = 1
         new_total = 0
-        seen_urls = set(existing_urls)
 
         for term_label, term_code in TERM_CODES.items():
             for prefix in prefixes:
                 print(
                     f"[{step}/{total_prefixes}] {term_label} {prefix}: fetching list..."
                 )
-                links = get_course_links(driver, prefix, term_code)
+                links, status = get_course_links(driver, prefix, term_code)
                 print(
                     f"[{step}/{total_prefixes}] {term_label} {prefix}: {len(links)} courses found"
                 )
 
-                if not links:
-                    log_empty_prefix(term_label, term_code, prefix, "empty")
+                if status != "ok" or not links:
+                    error_value = status if status != "ok" else "empty"
+                    key = (str(term_code), prefix, error_value)
+                    if key not in logged_empty:
+                        # Preserve the status so gaps can distinguish "empty" from transient failures.
+                        log_empty_prefix(term_label, term_code, prefix, error_value)
+                        logged_empty.add(key)
                     step += 1
                     continue
 
@@ -505,20 +590,15 @@ def main():
                 for link in links:
                     # Skip if we've already seen this course (existing or earlier in run).
                     if link in seen_urls:
-                        if not args.overwrite:
-                            continue
-                        # Avoid duplicate work in overwrite mode as well.
                         continue
 
                     try:
                         course = scrape_course(driver, link, term_label)
                         row = asdict(course)
-                        if args.overwrite:
-                            existing_rows[link] = row
-                            seen_urls.add(link)
-                        else:
-                            append_writer.writerow(row)
-                            seen_urls.add(link)
+                        if writer is None:
+                            raise RuntimeError("CSV writer not initialized")
+                        writer.writerow(row)
+                        seen_urls.add(link)
                         new_count += 1
                     except InvalidSessionIdException as e:
                         print(
@@ -548,23 +628,18 @@ def main():
                     print(
                         f"[{step}/{total_prefixes}] {term_label} {prefix}: Scraped {new_count} new/updated courses"
                     )
-                    if not args.overwrite and append_file:
-                        append_file.flush()
+                    if out_file:
+                        out_file.flush()
 
                 step += 1
 
     finally:
         print("Scraping finished. Shutting down WebDriver.")
         driver.quit()
-        if append_file:
-            append_file.close()
+        if out_file:
+            out_file.close()
 
-    if args.overwrite:
-        write_csv(existing_rows)
-        total = len(existing_rows)
-    else:
-        total = len(existing_urls) + new_total
-    print(f"Finished. Total courses in CSV: {total}")
+    print(f"Finished. Total courses in CSV: {len(seen_urls)}")
 
 
 if __name__ == "__main__":

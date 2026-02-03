@@ -3,10 +3,10 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.pytest_cache/
 
 # git directories
 .git/
 
 # macOS
 .DS_Store
-

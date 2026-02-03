@@ -50,13 +50,16 @@ There are two main scripts in this project.
 
 ### 1. `course_prefix.py` (Optional)
 
-This script is used to generate the list of course prefixes from the `data/Course-Numbering-and-Prefixes.pdf` file. The `PREFIXES` list in `scrape.py` was generated using this script. If the course prefixes change in the future, you can re-run this script to get an updated list.
+This script extracts the list of course prefixes from the NAU
+`data/Course-Numbering-and-Prefixes.pdf` file and writes them to `data/prefixes.json`.
+`scrape.py` reads that JSON file when scraping. If NAU adds/removes prefixes in the future,
+you can re-run this script to refresh the prefix list.
 
 ```bash
-python course_prefix.py
+python3 course_prefix.py
 ```
 
-This will print a Python list of prefixes to the console, which you can then copy into `scrape.py`.
+This will write `data/prefixes.json`.
 
 ### 2. `scrape.py`
 
@@ -64,7 +67,7 @@ This is the main script that performs the web scraping.
 
 **Basic Usage:**
 ```bash
-python scrape.py
+python3 scrape.py
 ```
 
 This will run the scraper in headless mode and will not overwrite existing data in `outputs/nau_courses.csv`. It will pick up where it left off if the script was stopped.
@@ -73,12 +76,12 @@ This will run the scraper in headless mode and will not overwrite existing data 
 
 -   `--overwrite`: If included, the script will re-scrape all courses and overwrite `outputs/nau_courses.csv` and `outputs/nau_empty_prefixes.csv`.
     ```bash
-    python scrape.py --overwrite
+    python3 scrape.py --overwrite
     ```
 
 -   `--no-headless`: If included, the script will run the Chrome browser in a visible window, which is useful for debugging.
     ```bash
-    python scrape.py --no-headless
+    python3 scrape.py --no-headless
     ```
 
 ## Output Files
@@ -98,7 +101,7 @@ This will run the scraper in headless mode and will not overwrite existing data 
     -   `term`: The academic term.
     -   `term_code`: The internal term code used by the NAU website.
     -   `prefix`: The course prefix that was empty.
-    -   `error`: The reason it was logged as empty (e.g., "empty").
+    -   `error`: The reason it was logged (e.g., `empty`, `timeout`, `error`).
 
 ## AI Curriculum Analysis
 
@@ -110,7 +113,8 @@ python3 ai_analysis.py
 
 This produces (in `outputs/`):
 
--   `nau_courses_with_flag.csv`: Full course list with `is_ai_related` and `is_ethics_related` boolean columns.
+-   `nau_courses_with_flag.csv`: Full term-level course rows with `is_ai_related` and `is_ethics_related` boolean columns.
+-   `nau_unique_courses_with_flag.csv`: Unique course list (deduped by `prefix + number`) with aggregated AI + ethics flags.
 -   `nau_courses_ai_subset.csv`: AI-related course subset (deduped by prefix + number).
 -   `nau_prefix_totals.csv`: Prefix | Total Courses (deduped by prefix + number).
 -   `nau_summary.csv`: Summary metrics (includes total unique course count).
@@ -177,17 +181,34 @@ If you want *more* courses without losing relevance:
   `knowledge representation`, or `expert systems`.
 - **Use context gating** for broader terms (e.g., require "robotics" + "learning" or
   "intelligent systems") to avoid unrelated matches.
-- **Tune fuzzy threshold** (default `90`) to slightly lower values like `88` if you are
-  missing obvious AI phrasing.
+- **Tune fuzzy thresholds** if you are missing obvious AI phrasing.
+  `ai_analysis.py` defaults to `95` for precision, while `ai_analysis_broad.py` defaults to `85`
+  to maximize recall.
+- Fuzzy thresholds are on a **0–100** scale.
 
 ### Known Gaps / Catalog Limits
 
 Some course numbers (e.g., special topics or “contemporary developments” like `499`) can represent
-multiple rotating topics across semesters. Because the analysis de-duplicates by `prefix + number`,
-those variations are intentionally counted as a single unique course in the totals.
+multiple rotating topics across semesters. The catalog often only exposes one generic entry for these
+numbers, so the scrape cannot capture the full set of rotating topics offered each semester (this can
+also apply to many `599` and `699` level special topics courses).
 
 ### Dependencies
 
 ```bash
 pip install pandas thefuzz[speedup]
 ```
+
+## Running Tests
+
+The repo includes a small test file that checks normalization, context gating, and
+dedup/flag behavior on a tiny synthetic CSV.
+
+```bash
+python3 tests/test_ai_analysis.py
+```
+
+## Notes for GitHub
+
+This repository tracks the `outputs/` folder in git so the deliverable CSVs are included alongside the code.
+If you re-run the scraper/analysis scripts, the CSVs in `outputs/` will be regenerated.

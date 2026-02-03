@@ -21,32 +21,34 @@ prefixes that returned zero results were logged to `outputs/nau_empty_prefixes.c
 courses <- read.csv(file.path(data_dir, "nau_courses.csv"))
 summary_metrics <- read.csv(file.path(data_dir, "nau_summary.csv"))
 prefix_totals <- read.csv(file.path(data_dir, "nau_prefix_totals.csv"))
-empty_prefixes <- read.csv(
-  file.path(data_dir, "nau_empty_prefixes.csv"),
-  header = FALSE
-)
-colnames(empty_prefixes) <- c("term", "term_code", "prefix", "error")
+empty_prefixes_path <- file.path(data_dir, "nau_empty_prefixes.csv")
+empty_prefixes <- read.csv(empty_prefixes_path, stringsAsFactors = FALSE)
+if (!all(c("term", "term_code", "prefix", "error") %in% colnames(empty_prefixes))) {
+  empty_prefixes <- read.csv(empty_prefixes_path, header = FALSE, stringsAsFactors = FALSE)
+  colnames(empty_prefixes) <- c("term", "term_code", "prefix", "error")
+}
 courses_unique <- unique(courses[, c("prefix", "number", "title")])
 flags_full <- read.csv(file.path(data_dir, "nau_courses_with_flag.csv"))
+flags_unique <- read.csv(file.path(data_dir, "nau_unique_courses_with_flag.csv"))
 ```
 
 Total unique courses (by prefix + number):
 
 ```{r total-unique}
-knitr::kable(summary_metrics)
+knitr::kable(summary_metrics, row.names = FALSE)
 ```
 
 Sample of raw course rows (first 5):
 
 ```{r sample-raw}
-knitr::kable(head(courses[, c("prefix", "number", "title")], 5))
+knitr::kable(head(courses[, c("prefix", "number", "title")], 5), row.names = FALSE)
 ```
 
 Missing prefixes:
 
 ```{r missing-prefixes}
-missing_prefixes <- sort(unique(empty_prefixes$prefix))
-knitr::kable(data.frame(prefix = missing_prefixes))
+missing_prefixes <- sort(unique(empty_prefixes$prefix[empty_prefixes$error == "empty"]))
+knitr::kable(data.frame(prefix = missing_prefixes), row.names = FALSE)
 ```
 
 # Initial AI Analysis (High-Confidence Core)
@@ -58,7 +60,7 @@ high-confidence AI-related courses.
 
 ```{r core-ai}
 ai_core <- read.csv(file.path(data_dir, "nau_courses_ai_subset.csv"))
-knitr::kable(ai_core[, c("prefix", "number", "title")])
+knitr::kable(ai_core[, c("prefix", "number", "title")], row.names = FALSE)
 ```
 
 Total AI related courses: `r nrow(ai_core)`
@@ -73,7 +75,8 @@ This produces:
 ```{r ai-expanded}
 ai_candidates <- read.csv(file.path(data_dir, "nau_courses_ai_candidates.csv"))
 knitr::kable(
-  data.frame(metric = "Broad AI candidates", value = nrow(ai_candidates))
+  data.frame(metric = "Broad AI candidates", value = nrow(ai_candidates)),
+  row.names = FALSE
 )
 ```
 
@@ -95,7 +98,7 @@ adjacent_keys <- data.frame(
   stringsAsFactors = FALSE
 )
 adjacent <- merge(adjacent_keys, courses_unique, by = c("prefix", "number"), all.x = TRUE)
-knitr::kable(adjacent[, c("prefix", "number", "title")])
+knitr::kable(adjacent[, c("prefix", "number", "title")], row.names = FALSE)
 ```
 
 # Ethics Analysis
@@ -107,7 +110,7 @@ set to avoid casual mentions of ethics in unrelated contexts.
 ethics <- read.csv(file.path(data_dir, "nau_courses_ethics_subset.csv"))
 
 # Show a sample to keep the report concise.
-knitr::kable(head(ethics[, c("prefix", "number", "title")], 18))
+knitr::kable(head(ethics[, c("prefix", "number", "title")], 18), row.names = FALSE)
 ```
 
 Total ethics courses: `r nrow(ethics)`
@@ -117,9 +120,10 @@ Total ethics courses: `r nrow(ethics)`
 Courses flagged as **both** AI-related and ethics-related:
 
 ```{r ai-ethics-overlap}
-ai_flag <- tolower(as.character(flags_full$is_ai_related)) %in% c("true", "1", "t", "yes")
-ethics_flag <- tolower(as.character(flags_full$is_ethics_related)) %in% c("true", "1", "t", "yes")
-ai_ethics <- unique(flags_full[ai_flag & ethics_flag, c("prefix", "number", "title")])
+ai_flag <- tolower(as.character(flags_unique$is_ai_related)) %in% c("true", "1", "t", "yes")
+ethics_flag <- tolower(as.character(flags_unique$is_ethics_related)) %in% c("true", "1", "t", "yes")
+ai_ethics <- flags_unique[ai_flag & ethics_flag, c("prefix", "number", "title")]
+rownames(ai_ethics) <- NULL
 knitr::kable(ai_ethics, row.names = FALSE)
 ```
 

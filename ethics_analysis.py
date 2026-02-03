@@ -16,8 +16,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import pandas as pd
-
 TITLE_PATTERNS = [
     r"\bethic(s|al)?\b",
     r"\bbioethic(s|al)?\b",
@@ -70,6 +68,15 @@ class EthicsMatcher:
 
 
 def main() -> None:
+    try:
+        import pandas as pd
+    except ImportError:  # pragma: no cover - runtime dependency check
+        print(
+            "Missing dependency: pandas. Install with: pip install pandas",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
     parser = argparse.ArgumentParser(
         description="Create an ethics-related course subset."
     )

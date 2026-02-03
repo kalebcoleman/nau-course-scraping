@@ -12,7 +12,22 @@ import re
 import sys
 from pathlib import Path
 
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:  # pragma: no cover - runtime dependency check
+    print(
+        "Missing dependency: pandas. Install with: pip install pandas", file=sys.stderr
+    )
+    raise SystemExit(1)
+
+try:
+    from thefuzz import fuzz  # type: ignore
+except ImportError:  # pragma: no cover - runtime dependency check
+    print(
+        "Missing dependency: thefuzz. Install with: pip install thefuzz[speedup]",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 
 # Broad patterns are grouped by label so the output can explain *why* a course matched.
 BROAD_PATTERNS: list[tuple[str, str]] = [
@@ -83,27 +98,14 @@ NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 
 def normalize_text(text: str) -> str:
     lowered = text.lower()
+    # Common catalog punctuation variant: "A.I." -> "ai" so word-boundary matches still work.
+    lowered = re.sub(r"\ba\.\s*i\.?\b", "ai", lowered)
     cleaned = NON_ALNUM_RE.sub(" ", lowered)
     return " ".join(cleaned.split())
-
-
-def max_fuzzy_score(text_norm: str, phrases: list[str]) -> int:
-    if not text_norm:
-        return 0
-    return max(fuzz.partial_ratio(text_norm, phrase) for phrase in phrases)
-
 
 def best_fuzzy_match(text_norm: str, phrases: list[str]) -> tuple[int, str]:
     if not text_norm:
         return 0, ""
-    try:
-        from thefuzz import fuzz  # type: ignore
-    except ImportError:  # pragma: no cover - runtime dependency check
-        print(
-            "Missing dependency: thefuzz. Install with: pip install thefuzz[speedup]",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
     best_score = -1
     best_phrase = ""
     for phrase in phrases:
@@ -180,14 +182,6 @@ def main() -> None:
         fuzzy_scores = [0] * len(df)
         fuzzy_phrases_matched = [""] * len(df)
     else:
-        try:
-            from thefuzz import fuzz  # type: ignore
-        except ImportError:  # pragma: no cover - runtime dependency check
-            print(
-                "Missing dependency: thefuzz. Install with: pip install thefuzz[speedup]",
-                file=sys.stderr,
-            )
-            raise SystemExit(1)
         for text in text_norm_series:
             score, phrase = best_fuzzy_match(text, fuzzy_phrases)
             fuzzy_scores.append(score)
