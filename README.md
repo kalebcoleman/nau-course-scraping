@@ -8,8 +8,8 @@ The primary goal of this project is to gather a comprehensive dataset of all cou
 
 - Scrapes course data for specified terms (e.g., Fall 2025, Spring 2026).
 - Extracts a comprehensive list of course prefixes from a PDF document.
-- Saves scraped course data to a CSV file (`nau_courses.csv`).
-- Keeps a log of course prefixes that did not return any results (`nau_empty_prefixes.csv`).
+- Saves scraped course data to a CSV file (`outputs/nau_courses.csv`).
+- Keeps a log of course prefixes that did not return any results (`outputs/nau_empty_prefixes.csv`).
 - Supports both headless and headed browser operation for debugging.
 - Can overwrite existing data or incrementally scrape only new courses.
 
@@ -20,8 +20,9 @@ The primary goal of this project is to gather a comprehensive dataset of all cou
 ├── course_prefix.py         # Script to extract course prefixes from the PDF.
 ├── Course-Numbering-and-Prefixes.pdf # PDF document with NAU course prefixes.
 ├── scrape.py                # The main web scraping script.
-├── nau_courses.csv          # Output: Scraped course data.
-├── nau_empty_prefixes.csv   # Output: Log of prefixes with no courses.
+├── outputs/                 # Output folder for scraper + analysis CSVs.
+│   ├── nau_courses.csv       # Scraped course data.
+│   └── nau_empty_prefixes.csv # Log of prefixes with no courses.
 └── README.md                # This file.
 ```
 
@@ -64,11 +65,11 @@ This is the main script that performs the web scraping.
 python scrape.py
 ```
 
-This will run the scraper in headless mode and will not overwrite existing data in `nau_courses.csv`. It will pick up where it left off if the script was stopped.
+This will run the scraper in headless mode and will not overwrite existing data in `outputs/nau_courses.csv`. It will pick up where it left off if the script was stopped.
 
 **Command-line Arguments:**
 
--   `--overwrite`: If included, the script will re-scrape all courses and overwrite `nau_courses.csv` and `nau_empty_prefixes.csv`.
+-   `--overwrite`: If included, the script will re-scrape all courses and overwrite `outputs/nau_courses.csv` and `outputs/nau_empty_prefixes.csv`.
     ```bash
     python scrape.py --overwrite
     ```
@@ -80,7 +81,7 @@ This will run the scraper in headless mode and will not overwrite existing data 
 
 ## Output Files
 
--   `nau_courses.csv`: This file contains the scraped course data with the following columns:
+-   `outputs/nau_courses.csv`: This file contains the scraped course data with the following columns:
     -   `term`: The academic term (e.g., "Fall 2025").
     -   `catalog_year`: The catalog year for the course.
     -   `prefix`: The course prefix (e.g., "ACC").
@@ -91,13 +92,13 @@ This will run the scraper in headless mode and will not overwrite existing data 
     -   `sections_offered`: A semicolon-separated list of offered sections.
     -   `url`: The URL of the course page.
 
--   `nau_empty_prefixes.csv`: This file logs any course prefixes that were queried but returned no results for a given term. This is useful for tracking which parts of the catalog might be empty.
+-   `outputs/nau_empty_prefixes.csv`: This file logs any course prefixes that were queried but returned no results for a given term. This is useful for tracking which parts of the catalog might be empty.
     -   `term`: The academic term.
     -   `term_code`: The internal term code used by the NAU website.
     -   `prefix`: The course prefix that was empty.
     -   `error`: The reason it was logged as empty (e.g., "empty").
 
-## AI Curriculum Analysis ("Rock On" Script)
+## AI Curriculum Analysis
 
 To identify AI-related courses and summarize the curriculum coverage, use the analysis script:
 
@@ -105,12 +106,13 @@ To identify AI-related courses and summarize the curriculum coverage, use the an
 python3 ai_course_analysis.py
 ```
 
-This produces:
+This produces (in `outputs/`):
 
--   `nau_courses_with_ai_flag.csv`: Full course list with `is_ai_related` boolean column.
+-   `nau_courses_with_ai_flag.csv`: Full course list with `is_ai_related` and `is_ethics_related` boolean columns.
 -   `nau_courses_ai_subset.csv`: AI-related course subset (deduped by prefix + number).
--   `nau_prefix_summary.csv`: Prefix | Total Courses | AI-Related Courses Found.
--   `nau_gap_report.csv`: Prefixes that yielded zero results during the scrape.
+-   `nau_courses_ethics_subset.csv`: Ethics-related course subset (deduped by prefix + number).
+-   `nau_prefix_totals.csv`: Prefix | Total Courses (deduped by prefix + number).
+-   `nau_summary.csv`: Summary metrics (includes total unique course count).
 
 ### Why These Keywords
 
@@ -121,10 +123,44 @@ Based on the whiteboard session, the keywords focus on the core AI curriculum an
 -   LLM, GPT, ChatGPT
 -   Deep Learning
 -   Generative AI
+-   Autonomous Systems
 -   Artificial Intelligence
 -   Machine Learning
 
 The script also applies fuzzy matching (via `thefuzz`) to catch typos or small variations in titles/descriptions.
+For higher precision, it uses word-boundary regex patterns and only treats `ethics`/`agent` as AI-related
+when the same course also includes an explicit AI context term.
+
+### Matching Logic (Short Version)
+
+1. **Primary match:** explicit AI terms such as "artificial intelligence", "machine learning",
+   "deep learning", "LLM", "GPT", "computer vision", "NLP", etc.
+2. **Secondary + context match:** ambiguous terms like "ethics" or "agent" only count
+   if the course also contains a primary AI context term.
+3. **Fuzzy match (optional):** catches small typos/variations in explicit AI phrases.
+4. **Context-gated terms:** ambiguous phrases (including "autonomous systems") only count when
+   an explicit AI context term is also present in the title/description for the AI flag.
+5. **Ethics subset:** `ethics` is tracked separately for a dedicated ethics-only output.
+   The matching rules live in `ethics_filter.py`. You can use `--ethics-title-only` to
+   restrict the ethics list to titles only.
+
+### Expanding Coverage (Still High Relevance)
+
+If you want *more* courses without losing relevance:
+
+- **Add AI-adjacent terms** to `PRIMARY_PATTERNS` and `FUZZY_PHRASES` such as
+  `robotics`, `autonomous systems`, `pattern recognition`, `data mining`,
+  `knowledge representation`, or `expert systems`.
+- **Use context gating** for broader terms (e.g., require "robotics" + "learning" or
+  "intelligent systems") to avoid unrelated matches.
+- **Tune fuzzy threshold** (default `90`) to slightly lower values like `88` if you are
+  missing obvious AI phrasing.
+
+### Known Gaps / Catalog Limits
+
+Some course numbers (e.g., special topics or “contemporary developments” like `499`) can represent
+multiple rotating topics across semesters. Because the analysis de-duplicates by `prefix + number`,
+those variations are intentionally counted as a single unique course in the totals.
 
 ### Dependencies
 

@@ -13,8 +13,8 @@ flag is provided.
 Key functionalities:
 - Scrapes course details for specified academic terms.
 - Handles pagination and dynamic content loading.
-- Saves data to a CSV file (`nau_courses.csv`).
-- Logs course prefixes that yield no results (`nau_empty_prefixes.csv`).
+- Saves data to a CSV file (`outputs/nau_courses.csv`).
+- Logs course prefixes that yield no results (`outputs/nau_empty_prefixes.csv`).
 - Supports headless (default) and headed browser modes for scraping.
 - Provides an option to overwrite existing data.
 """
@@ -54,8 +54,9 @@ TERM_CODES = {
     "Spring 2026": 1261,
 }
 
-CSV_PATH = "nau_courses.csv"
-EMPTY_PREFIXES_CSV = "nau_empty_prefixes.csv"
+OUTPUT_DIR = "outputs"
+CSV_PATH = f"{OUTPUT_DIR}/nau_courses.csv"
+EMPTY_PREFIXES_CSV = f"{OUTPUT_DIR}/nau_empty_prefixes.csv"
 PREFIXES_PATH = "prefixes.json"
 
 # Time to wait between requests to be polite to the server.
@@ -88,6 +89,12 @@ class Course:
 def polite_sleep():
     """Waits for a short period to avoid overwhelming the server."""
     time.sleep(SLEEP_TIME)
+
+
+def ensure_output_dirs() -> None:
+    """Ensure output directories exist for CSV outputs."""
+    Path(CSV_PATH).parent.mkdir(parents=True, exist_ok=True)
+    Path(EMPTY_PREFIXES_CSV).parent.mkdir(parents=True, exist_ok=True)
 
 
 def make_driver(headless: bool) -> WebDriver:
@@ -181,6 +188,8 @@ def write_csv(rows: Dict[str, Dict]):
     if not rows:
         return
 
+    ensure_output_dirs()
+
     # The fieldnames are derived from the Course dataclass for stability.
     fieldnames = [field.name for field in fields(Course)]
 
@@ -197,6 +206,7 @@ def open_append_writer(fieldnames: List[str]) -> tuple[csv.DictWriter, object]:
     Returns:
         tuple[csv.DictWriter, object]: The writer and the file handle (caller closes).
     """
+    ensure_output_dirs()
     needs_header = not os.path.exists(CSV_PATH) or os.path.getsize(CSV_PATH) == 0
     f = open(CSV_PATH, "a", newline="", encoding="utf-8")
     writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -216,6 +226,7 @@ def log_empty_prefix(term_label: str, term_code: int, prefix: str, error: str):
         error (str): A short description of why it's considered empty.
     """
     # Create the file and write the header if it doesn't exist.
+    ensure_output_dirs()
     write_header = not os.path.exists(EMPTY_PREFIXES_CSV)
     with open(EMPTY_PREFIXES_CSV, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
@@ -453,6 +464,7 @@ def main():
     prefixes, scrapes new courses, and saves the results.
     """
     args = parse_args()
+    ensure_output_dirs()
     prefixes = load_prefixes(args.prefixes)
     driver = make_driver(headless=not args.no_headless)
 
