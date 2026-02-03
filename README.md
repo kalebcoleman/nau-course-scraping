@@ -103,16 +103,27 @@ This will run the scraper in headless mode and will not overwrite existing data 
 To identify AI-related courses and summarize the curriculum coverage, use the analysis script:
 
 ```bash
-python3 ai_course_analysis.py
+python3 ai_analysis.py
 ```
 
 This produces (in `outputs/`):
 
--   `nau_courses_with_ai_flag.csv`: Full course list with `is_ai_related` and `is_ethics_related` boolean columns.
+-   `nau_courses_with_ai_flag.csv`: Full course list with `is_ai_related` boolean column.
 -   `nau_courses_ai_subset.csv`: AI-related course subset (deduped by prefix + number).
--   `nau_courses_ethics_subset.csv`: Ethics-related course subset (deduped by prefix + number).
 -   `nau_prefix_totals.csv`: Prefix | Total Courses (deduped by prefix + number).
 -   `nau_summary.csv`: Summary metrics (includes total unique course count).
+
+### Broad AI Candidate Search
+
+If you want to maximize recall and review later, run:
+
+```bash
+python3 ai_analysis_broad.py
+```
+
+This produces:
+
+-   `nau_courses_ai_candidates.csv`: Broad AI candidate list (may include false positives).
 
 ### Why These Keywords
 
@@ -140,9 +151,20 @@ when the same course also includes an explicit AI context term.
 3. **Fuzzy match (optional):** catches small typos/variations in explicit AI phrases.
 4. **Context-gated terms:** ambiguous phrases (including "autonomous systems") only count when
    an explicit AI context term is also present in the title/description for the AI flag.
-5. **Ethics subset:** `ethics` is tracked separately for a dedicated ethics-only output.
-   The matching rules live in `ethics_filter.py`. You can use `--ethics-title-only` to
-   restrict the ethics list to titles only.
+
+### Ethics Subset (Separate Script)
+
+For a dedicated ethics list, run:
+
+```bash
+python3 ethics_analysis.py
+```
+
+This produces:
+
+-   `nau_courses_ethics_subset.csv`: Ethics-related course subset (deduped by prefix + number).
+
+The matching rules live in `ethics_analysis.py`, and the description is always included.
 
 ### Expanding Coverage (Still High Relevance)
 
