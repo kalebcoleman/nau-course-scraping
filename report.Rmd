@@ -14,10 +14,9 @@ data_dir <- "outputs"
 # Data Collection
 
 I scraped course data from the NAU catalog using `scrape.py`, which iterates across
-course prefixes and terms, then writes results to `outputs/nau_courses.csv`. Any
-prefixes that returned zero results were logged to `outputs/nau_empty_prefixes.csv`.
+course prefixes and terms, then writes results to `outputs/nau_courses.csv`. all empty prefixes were logged to `outputs/nau_empty_prefixes.csv`.
 
-GitHub repo: [github.com/kalebcoleman/nau_course_scraping](https://github.com/kalebcoleman/nau-course-scraping)
+I appended three missing prefixes that were not listed in the PDF: `MRE`, `BAN`, and `STAT`. This added additional courses to the dataset and updated the AI candidate list.
 
 ```{r load-data}
 courses <- read.csv(file.path(data_dir, "nau_courses.csv"))
@@ -85,9 +84,12 @@ knitr::kable(
 I manually reviewed the broad candidate list and found a mix of true AI‑adjacent
 material and false positives. Some matches came from non‑AI contexts (for example,
 courses about teaching/learning that triggered on “learning” or “intelligent”), while
-others surfaced useful applied topics. The broad list is still valuable as a recall‑first
-screen: I can select additional AI‑adjacent courses from these 83 candidates if needed,
-but I kept the high‑confidence list at 19.
+others surfaced useful applied topics. The full scope is documented in the separate
+appendix PDF (`ai_candidates_report.pdf`), generated from `ai_candidates_report.Rmd`.
+That appendix includes the core AI list, the AI‑adjacent highlights, and the remaining
+non‑core candidates, so the entire candidate set is available for review.
+
+\newpage
 
 ## AI-Adjacent Highlights
 
@@ -96,8 +98,8 @@ or image processing) even if they are not explicitly labeled as AI in the catalo
 
 ```{r ai-adjacent}
 adjacent_keys <- data.frame(
-  prefix = c("ART", "EE", "ME"),
-  number = c("376", "442", "542"),
+  prefix = c("ART", "EE", "BAN", "EE", "MRE"),
+  number = c("376", "442", "440", "526", "471"),
   stringsAsFactors = FALSE
 )
 adjacent <- merge(adjacent_keys, courses_unique, by = c("prefix", "number"), all.x = TRUE)
@@ -113,7 +115,7 @@ set to avoid casual mentions of ethics in unrelated contexts.
 ethics <- read.csv(file.path(data_dir, "nau_courses_ethics_subset.csv"))
 
 # Show a sample to keep the report concise.
-knitr::kable(head(ethics[, c("prefix", "number", "title")], 9), row.names = FALSE)
+knitr::kable(head(ethics[, c("prefix", "number", "title")], 5), row.names = FALSE)
 ```
 
 Total ethics courses: `r nrow(ethics)`
@@ -182,3 +184,6 @@ these headers.
 - **Data maintenance:** The prefix list is based on `data/Course-Numbering-and-Prefixes.pdf`.
   If NAU adds or removes prefixes and the PDF is out of date, those changes will not
   appear in the scrape. A periodic prefix refresh should be part of future updates.
+  The “missing prefixes” table should be interpreted cautiously: it only reflects
+  prefixes that returned zero results during the scrape, and it will not surface
+  prefixes that exist but were omitted from the PDF source (for example, BAN, MRE, STAT).

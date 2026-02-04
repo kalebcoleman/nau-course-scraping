@@ -1,0 +1,105 @@
+---
+title: "NAU Course Audit: Expanded AI Candidates"
+author: "Kaleb Coleman"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: false
+header-includes:
+  - \usepackage{needspace}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, results = "asis", message = FALSE, warning = FALSE)
+```
+
+## Overview
+
+This document lists the `r nrow(read.csv("outputs/nau_courses_ai_candidates.csv"))`
+"Broad AI Candidates" identified during the NAU course catalog audit.
+This recall‑first list includes the 21 high‑confidence AI courses as well as additional candidates.
+Some entries are keyword‑only matches or AI‑adjacent topics, which is why the broad list is kept
+separate from the core list.
+
+For non‑core entries, a **match note** is shown in brackets. If the note says
+“fuzzy match,” it means the course did not match an exact keyword but was picked up
+by fuzzy matching for a close variant.
+
+```{r data-load}
+library(dplyr)
+
+candidates <- read.csv("outputs/nau_courses_ai_candidates.csv")
+flags <- read.csv("outputs/nau_unique_courses_with_flag.csv")
+
+flags <- flags %>%
+  mutate(
+    is_ai_related = tolower(as.character(is_ai_related)) %in% c("true", "1", "t", "yes"),
+    is_ethics_related = tolower(as.character(is_ethics_related)) %in% c("true", "1", "t", "yes")
+  ) %>%
+  select(prefix, number, is_ai_related, is_ethics_related)
+
+candidates <- candidates %>%
+  left_join(flags, by = c("prefix", "number")) %>%
+  mutate(
+    tag = case_when(
+      is_ai_related & is_ethics_related ~ " (AI & Ethics)",
+      is_ai_related ~ " (AI)",
+      TRUE ~ ""
+    ),
+    match_reason_raw = ifelse(
+      !is.na(ai_candidate_reason) & ai_candidate_reason != "",
+      ai_candidate_reason,
+      ""
+    ),
+    match_reason_clean = gsub("_", " ", match_reason_raw),
+    match_is_fuzzy = grepl("^fuzzy:", match_reason_clean),
+    match_reason_clean = gsub("^fuzzy:", "", match_reason_clean),
+    match_reason_clean = gsub("\\s*,\\s*", ", ", match_reason_clean),
+    match_reason_clean = trimws(match_reason_clean),
+    match_reason = case_when(
+      is_ai_related ~ "",
+      match_reason_clean != "" & match_is_fuzzy ~ paste0(" [fuzzy match: ", match_reason_clean, "]"),
+      match_reason_clean != "" ~ paste0(" [match: ", match_reason_clean, "]"),
+      TRUE ~ ""
+    )
+  ) %>%
+  arrange(prefix, number)
+
+adjacent_keys <- data.frame(
+  prefix = c("ART", "EE", "ME", "BAN", "EE", "MRE"),
+  number = c("376", "442", "542", "440", "526", "471"),
+  stringsAsFactors = FALSE
+)
+adjacent <- candidates %>%
+  inner_join(adjacent_keys, by = c("prefix", "number")) %>%
+  distinct(prefix, number, .keep_all = TRUE)
+
+core <- candidates %>% filter(is_ai_related)
+non_core <- candidates %>%
+  filter(!is_ai_related) %>%
+  anti_join(adjacent_keys, by = c("prefix", "number"))
+
+cat("## Core AI Courses (High-Confidence)\n\n")
+for (i in seq_len(nrow(core))) {
+  cat("### ", core$prefix[i], " ", core$number[i], ": ",
+      core$title[i], core$tag[i], core$match_reason[i], "\n\n", sep = "")
+  cat(core$description[i], "\n\n")
+  cat("\n")
+}
+
+cat("## AI-Adjacent Highlights\n\n")
+for (i in seq_len(nrow(adjacent))) {
+  cat("### ", adjacent$prefix[i], " ", adjacent$number[i], ": ",
+      adjacent$title[i], adjacent$tag[i], adjacent$match_reason[i], "\n\n", sep = "")
+  cat(adjacent$description[i], "\n\n")
+  cat("\n")
+}
+
+cat("## Broad Candidates (Non-Core)\n\n")
+for (i in seq_len(nrow(non_core))) {
+  cat("### ", non_core$prefix[i], " ", non_core$number[i], ": ",
+      non_core$title[i], non_core$tag[i], non_core$match_reason[i], "\n\n", sep = "")
+  cat(non_core$description[i], "\n\n")
+  cat("\n")
+}
+```

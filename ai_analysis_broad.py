@@ -168,7 +168,6 @@ def main() -> None:
 
     reasons: list[str] = []
     matched: list[bool] = []
-    fuzzy_scores: list[int] = []
     fuzzy_phrases_matched: list[str] = []
 
     for text_norm in text_norm_series:
@@ -179,14 +178,14 @@ def main() -> None:
 
     if args.disable_fuzzy:
         fuzzy_match = [False] * len(df)
-        fuzzy_scores = [0] * len(df)
         fuzzy_phrases_matched = [""] * len(df)
     else:
+        fuzzy_match: list[bool] = []
         for text in text_norm_series:
             score, phrase = best_fuzzy_match(text, fuzzy_phrases)
-            fuzzy_scores.append(score)
-            fuzzy_phrases_matched.append(phrase if score >= args.fuzzy_threshold else "")
-        fuzzy_match = [score >= args.fuzzy_threshold for score in fuzzy_scores]
+            is_match = score >= args.fuzzy_threshold
+            fuzzy_match.append(is_match)
+            fuzzy_phrases_matched.append(phrase if is_match else "")
 
     df["is_ai_candidate"] = [m or f for m, f in zip(matched, fuzzy_match)]
 
@@ -201,7 +200,6 @@ def main() -> None:
 
     df["ai_candidate_reason"] = final_reasons
     df["ai_candidate_fuzzy_phrase"] = fuzzy_phrases_matched
-    df["ai_candidate_fuzzy_score"] = fuzzy_scores
 
     subset = (
         df[df["is_ai_candidate"]]
